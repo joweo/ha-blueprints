@@ -1,0 +1,107 @@
+blueprint:
+  name: Multiple Motion Sensors with Light Control
+  description: Turns on a light when motion is detected and it's dark enough. The light stays on as long as motion is detected and turns off after a configurable time.
+  domain: automation
+  input:
+    motion_sensors:
+      name: Motion Sensors
+      description: Select the motion sensors that will control the lighting
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+    light_sensor:
+      name: Light Sensor
+      description: Select the sensor that measures brightness
+      selector:
+        entity:
+          domain: sensor
+    lux_threshold:
+      name: Lux Threshold
+      description: Brightness level below which the light should be activated (in lux)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 200
+          unit_of_measurement: lux
+    light_entity:
+      name: Target Light
+      description: The light that should be turned on and off
+      selector:
+        entity:
+          domain: light
+    brightness:
+      name: Brightness
+      description: Brightness of the light in percent
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+    turn_off_time:
+      name: Turn Off Delay
+      description: Time in minutes after which the light should be turned off when no more motion is detected
+      default: 1
+      selector:
+        number:
+          min: 0.5
+          max: 60
+          step: 0.5
+          unit_of_measurement: min
+
+# Actual automation
+trigger:
+  # Trigger for all selected motion sensors
+  - platform: state
+    entity_id: !input motion_sensors
+    to: 'on'
+  # Additional trigger: Light sensor falls below threshold
+  - platform: numeric_state
+    entity_id: !input light_sensor
+    below: !input lux_threshold
+
+condition:
+  # Condition: Dark enough and at least one motion sensor active
+  - condition: and
+    conditions:
+      - condition: numeric_state
+        entity_id: !input light_sensor
+        below: !input lux_threshold
+      - condition: or
+        conditions:
+          - condition: state
+            entity_id: !input motion_sensors
+            state: 'on'
+
+action:
+  # Turn on light
+  - service: light.turn_on
+    target:
+      entity_id: !input light_entity
+    data:
+      brightness_pct: !input brightness
+  
+  # Stay in this loop as long as at least one sensor detects motion
+  - repeat:
+      while:
+        - condition: or
+          conditions:
+            - condition: state
+              entity_id: !input motion_sensors
+              state: 'on'
+      sequence:
+        - delay:
+            seconds: 1
+  
+  # Wait the configured time
+  - delay:
+      minutes: !input turn_off_time
+      
+  # Turn off the light
+  - service: light.turn_off
+    target:
+      entity_id: !input light_entity
+
+mode: restart
